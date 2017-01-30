@@ -149,10 +149,10 @@ fn main() {
 
     // Contains the height of each floor tile.
     let maze = [64, 64, 64, 64, 64,// 0 - 64
-                64, 0, 0, 32, 64, // 64 - 128
-                64, 0, 0, 0, 56, // 128 - 196
-                0, 64, 0, 0, 64, // 196 - 256
-                0, 0, 32, 64, 0];
+                64, 0, 0, 0, 0, // 64 - 128
+                64, 0, 0, 32, 64, // 128 - 196
+                64, 0, 0, 0, 0, // 196 - 256
+                64, 64, 32, 64, 64];
 
 
     //let mut last_time = time::precise_time_s() as f32;
@@ -347,7 +347,93 @@ fn main() {
                         vert_wall_intersection_x += vert_wall_x_offset;
                 }*/
 
-                let mut dist_to_horz_intersection: f32 = std::f32::MAX;
+                let mut horz_out_of_range = false;
+                let mut vert_out_of_range = false;
+                while !horz_out_of_range && !vert_out_of_range {
+                    let mut dist_to_horz_intersection: f32 = std::f32::MAX;
+                    let mut hor_cell_height : f32 = 0.0;
+
+                    let mut dist_to_vert_intersection: f32 = std::f32::MAX;
+                    let mut vert_cell_height : f32 = 0.0;
+
+                    if ray_angle_degrees != 180 && ray_angle_degrees != 0 {
+                        let mut casting_ray = true;
+                        while casting_ray && !horz_out_of_range {
+                            // Will be used to index into the map array to check for walls.
+                            let cell_y : i32 = (horz_wall_intersection_y / CELL_SIZE as f32) as i32;
+                            let cell_x : i32 = (horz_wall_intersection_x / CELL_SIZE as f32) as i32;
+                            // Check the horz_wall_intersections instead of the cell indexes for being < 0 since rounding (casting to i32) will sometimes round to 0 instead of a negative
+                            // This will then display a horz wall at the 0 index outside the map.
+                            if horz_wall_intersection_x < 0f32 || horz_wall_intersection_y < 0f32 || horz_wall_intersection_x >= (MAZE_SIZE * CELL_SIZE) as f32 || horz_wall_intersection_y >= (MAZE_SIZE * CELL_SIZE) as f32 {
+                                dist_to_horz_intersection = std::f32::MAX;
+                                horz_out_of_range = true;
+                            } else if maze[(cell_y * MAZE_SIZE + cell_x) as usize] > 0 {
+                                hor_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
+                                let y_dist = (horz_wall_intersection_y - player_y).powf(2.0);
+                                let x_dist = (horz_wall_intersection_x - player_x).powf(2.0);
+                                dist_to_horz_intersection = (x_dist + y_dist).sqrt();
+                                casting_ray = false;
+                            }
+
+                            // Extend the ray further, checking what will be the next intersection.
+                            horz_wall_intersection_y += horz_wall_y_offset;
+                            horz_wall_intersection_x += horz_wall_x_offset;
+                        }
+                    }
+
+                    if ray_angle.to_degrees() != 90f32 && ray_angle.to_degrees() != 270f32 {
+                        let mut casting_ray = true;
+                        while casting_ray && !vert_out_of_range {
+                            let cell_y = (vert_wall_intersection_y / CELL_SIZE as f32) as i32;
+                            let cell_x = (vert_wall_intersection_x / CELL_SIZE as f32) as i32;
+                            // Check the vert_wall_intersections instead of the cell indexes for being < 0 since rounding (casting to i32) will sometimes round to 0 instead of a negative
+                            // This will then display a vert wall at the 0 index outside the map.
+                            if vert_wall_intersection_x < 0f32 || vert_wall_intersection_y < 0f32 || cell_y >= MAZE_SIZE || cell_x >= MAZE_SIZE {
+                                dist_to_vert_intersection = std::f32::MAX;
+                                vert_out_of_range = true;
+                            } else if maze[(cell_y * MAZE_SIZE + cell_x) as usize] > 0 {
+                                // Does the line of intersection belong to a cell that is a wall?
+                                vert_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
+                                let y_dist = (vert_wall_intersection_y - player_y).powf(2.0);
+                                let x_dist = (vert_wall_intersection_x - player_x).powf(2.0);
+                                dist_to_vert_intersection = (x_dist + y_dist).sqrt();
+                                casting_ray = false;
+                            }
+
+                            // Extend the ray further, checking what will be the next intersection.
+                            vert_wall_intersection_y += vert_wall_y_offset;
+                            vert_wall_intersection_x += vert_wall_x_offset;
+                        }
+                    }
+
+                    let mut cell_height = vert_cell_height;
+                    let mut distance = dist_to_vert_intersection;
+                    let mut wall_texture_offset = vert_wall_intersection_y as u32 % CELL_SIZE as u32;
+                    let mut wall_intersection_x = vert_wall_intersection_x;
+                    let mut wall_intersection_y = vert_wall_intersection_y;
+
+                    if dist_to_horz_intersection < dist_to_vert_intersection {
+                        cell_height = hor_cell_height;
+                        distance = dist_to_horz_intersection;
+                        wall_texture_offset = horz_wall_intersection_x as u32 % CELL_SIZE as u32;
+                        wall_intersection_x = horz_wall_intersection_x;
+                        wall_intersection_y = horz_wall_intersection_y;
+                    }
+
+                    // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
+                    let beta = ray_angle - player_angle;
+                    distance = distance * beta.cos();
+
+                    let projected_slice_height = (cell_height / distance * distance_to_projplane) as i32;
+                    let projected_bottom_coord = PROJPLANE_HEIGHT/2 - (PLAYER_HEIGHT as f32 / (distance / distance_to_projplane)) as i32;
+                    //let projected_bottom_coord = PROJPLANE_HEIGHT/2 - projected_slice_height/2;
+
+                    let tex_x = (wall_texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
+
+                    draw_wall_column(projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
+                }
+
+                /*let mut dist_to_horz_intersection: f32 = std::f32::MAX;
                 let mut hor_cell_height : f32 = 0.0;
                 // If the ray angle is angle is equal to 180 or 0, it will never intersect any horizontal wall.
                 if ray_angle_degrees != 180 && ray_angle_degrees != 0 {
@@ -436,7 +522,7 @@ fn main() {
 
                 let tex_x = (wall_texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
 
-                draw_wall_column(projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
+                draw_wall_column(projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);*/
 
                 // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
                 /*let beta = ray_angle - player_angle;
