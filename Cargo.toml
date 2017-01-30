@@ -1,0 +1,10 @@
+[package]
+name = "wayfarer"
+version = "0.1.0"
+authors = ["Daniel Russell"]
+
+[dependencies]
+glium = "*"
+image = "*"
+rand = "*"
+time = "*"
