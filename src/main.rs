@@ -84,6 +84,48 @@ fn draw_wall_column(top_of_last_wall : i32,
     }
 }
 
+fn draw_wall_and_floor_columns(cell_height: f32,
+                            mut distance: f32,
+                            distance_to_projplane: f32,
+                            column: i32,
+                            top_of_last_wall: i32,
+                            wall_texture_offset: u32,
+                            image_width: u32,
+                            image_height: u32,
+                            image_buffer: &Vec< Vec<(u8,u8,u8)> >,
+                            mut dest_buffer: &mut Vec< Vec<(u8,u8,u8)> >) -> i32 {
+
+    let projected_slice_height = (cell_height / distance * distance_to_projplane) as i32;
+    let projected_bottom_coord = PROJPLANE_HEIGHT/2 - (PLAYER_HEIGHT as f32 / (distance / distance_to_projplane)) as i32;
+    //let projected_bottom_coord = PROJPLANE_HEIGHT/2 - projected_slice_height/2;
+
+    // Floor Casting TODO: bring back once wall visiual glitches are sorted.
+    //let (projplane_pixel_x, projplane_pixel_y) = (column, projected_bottom_coord);
+
+    // TODO: have different textures, super confusing right now.
+    // TODO: Readd the ceilling drawing.
+    /*draw_floor_column(projplane_pixel_x,
+                    projplane_pixel_y,
+                    top_of_last_wall,
+                    distance,
+                    wall_intersection_x,
+                    wall_intersection_y,
+                    distance_to_projplane,
+                    player_x,
+                    player_y,
+                    image_width,
+                    &image_buffer,
+                    &mut dest_buffer);*/
+
+    let tex_x = (wall_texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
+
+    let wall_bottom_coord = if projected_bottom_coord > top_of_last_wall { projected_bottom_coord } else { top_of_last_wall };
+
+    draw_wall_column(wall_bottom_coord, projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
+
+    projected_bottom_coord + projected_slice_height
+}
+
 fn main() {
     // building the display, ie. the main object
     let display = glutin::WindowBuilder::new()
@@ -355,16 +397,16 @@ fn main() {
 
                 let mut horz_out_of_range = false;
                 let mut vert_out_of_range = false;
-                while !horz_out_of_range && !vert_out_of_range {
+                while !horz_out_of_range || !vert_out_of_range {
                     let mut dist_to_horz_intersection: f32 = std::f32::MAX;
                     let mut hor_cell_height : f32 = 0.0;
 
                     let mut dist_to_vert_intersection: f32 = std::f32::MAX;
                     let mut vert_cell_height : f32 = 0.0;
 
+                    let mut horizontal_ray_intersection = false;
                     if ray_angle_degrees != 180 && ray_angle_degrees != 0 {
-                        let mut casting_ray = true;
-                        while casting_ray && !horz_out_of_range {
+                        //while casting_ray && !horz_out_of_range {
                             // Will be used to index into the map array to check for walls.
                             let cell_y : i32 = (horz_wall_intersection_y / CELL_SIZE as f32) as i32;
                             let cell_x : i32 = (horz_wall_intersection_x / CELL_SIZE as f32) as i32;
@@ -379,19 +421,24 @@ fn main() {
                                     let y_dist = (horz_wall_intersection_y - player_y).powf(2.0);
                                     let x_dist = (horz_wall_intersection_x - player_x).powf(2.0);
                                     dist_to_horz_intersection = (x_dist + y_dist).sqrt();
+
+                                    horizontal_ray_intersection = true;
                                 }
-                                casting_ray = false;
                             }
 
                             // Extend the ray further, checking what will be the next intersection.
                             horz_wall_intersection_y += horz_wall_y_offset;
                             horz_wall_intersection_x += horz_wall_x_offset;
-                        }
+                        //}
+                    }
+                    else
+                    {
+                        horz_out_of_range = true;
                     }
 
-                    if ray_angle.to_degrees() != 90f32 && ray_angle.to_degrees() != 270f32 {
-                        let mut casting_ray = true;
-                        while casting_ray && !vert_out_of_range {
+                    let mut vertical_ray_intersection = false;
+                    if ray_angle_degrees != 90 && ray_angle_degrees != 270 {
+                        //while casting_ray && !vert_out_of_range {
                             let cell_y = (vert_wall_intersection_y / CELL_SIZE as f32) as i32;
                             let cell_x = (vert_wall_intersection_x / CELL_SIZE as f32) as i32;
                             // Check the vert_wall_intersections instead of the cell indexes for being < 0 since rounding (casting to i32) will sometimes round to 0 instead of a negative
@@ -406,21 +453,65 @@ fn main() {
                                     let y_dist = (vert_wall_intersection_y - player_y).powf(2.0);
                                     let x_dist = (vert_wall_intersection_x - player_x).powf(2.0);
                                     dist_to_vert_intersection = (x_dist + y_dist).sqrt();
+
+                                    vertical_ray_intersection = true;
                                 }
-                                casting_ray = false;
                             }
 
                             // Extend the ray further, checking what will be the next intersection.
                             vert_wall_intersection_y += vert_wall_y_offset;
                             vert_wall_intersection_x += vert_wall_x_offset;
-                        }
+                        //}
+                    }
+                    else
+                    {
+                        vert_out_of_range = true;
                     }
 
-                    if vert_out_of_range && horz_out_of_range {
+                    if !vertical_ray_intersection && !horizontal_ray_intersection {
                         continue;
                     }
 
-                    let mut cell_height = vert_cell_height;
+                    let (closer_cell_height, mut closer_distance, closer_texture_offset) = if dist_to_horz_intersection < dist_to_vert_intersection {
+                        let horz_texture_offset = horz_wall_intersection_x as u32 % CELL_SIZE as u32;
+                        (hor_cell_height, dist_to_horz_intersection, horz_texture_offset)
+                    }
+                    else {
+                        let vert_texture_offset = vert_wall_intersection_y as u32 % CELL_SIZE as u32;
+                        (vert_cell_height, dist_to_vert_intersection, vert_texture_offset)
+                    };
+
+                    let (far_cell_height, mut far_distance, far_texture_offset) = if dist_to_horz_intersection > dist_to_vert_intersection {
+                        let horz_texture_offset = horz_wall_intersection_x as u32 % CELL_SIZE as u32;
+                        (hor_cell_height, dist_to_horz_intersection, horz_texture_offset)
+                    }
+                    else {
+                        let vert_texture_offset = vert_wall_intersection_y as u32 % CELL_SIZE as u32;
+                        (vert_cell_height, dist_to_vert_intersection, vert_texture_offset)
+                    };
+
+                    // Draw close
+                    current_height = closer_cell_height as i32;
+
+                    // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
+                    let beta = ray_angle - player_angle;
+                    closer_distance = closer_distance * beta.cos();
+
+                    top_of_last_wall = draw_wall_and_floor_columns(closer_cell_height, closer_distance, distance_to_projplane, column, top_of_last_wall, closer_texture_offset, image_width, image_height, &image_buffer, &mut dest_buffer);
+
+                    if vertical_ray_intersection && horizontal_ray_intersection
+                    {
+                        // Draw far
+                        current_height = far_cell_height as i32;
+
+                        // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
+                        let beta = ray_angle - player_angle;
+                        far_distance = far_distance * beta.cos();
+
+                        top_of_last_wall = draw_wall_and_floor_columns(far_cell_height, far_distance, distance_to_projplane, column, top_of_last_wall, far_texture_offset, image_width, image_height, &image_buffer, &mut dest_buffer);
+                    }
+
+                    /*let mut cell_height = vert_cell_height;
                     let mut distance = dist_to_vert_intersection;
                     let mut wall_texture_offset = vert_wall_intersection_y as u32 % CELL_SIZE as u32;
                     let mut wall_intersection_x = vert_wall_intersection_x;
@@ -440,7 +531,10 @@ fn main() {
                     let beta = ray_angle - player_angle;
                     distance = distance * beta.cos();
 
-                    let projected_slice_height = (cell_height / distance * distance_to_projplane) as i32;
+                    top_of_last_wall = draw_wall_and_floor_columns(cell_height, distance, distance_to_projplane, column, top_of_last_wall, wall_texture_offset, image_width, image_height, &image_buffer, &mut dest_buffer);
+                    */
+
+                    /*let projected_slice_height = (cell_height / distance * distance_to_projplane) as i32;
                     let projected_bottom_coord = PROJPLANE_HEIGHT/2 - (PLAYER_HEIGHT as f32 / (distance / distance_to_projplane)) as i32;
                     //let projected_bottom_coord = PROJPLANE_HEIGHT/2 - projected_slice_height/2;
 
@@ -468,7 +562,7 @@ fn main() {
 
                     draw_wall_column(wall_bottom_coord, projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
 
-                    top_of_last_wall = projected_bottom_coord + projected_slice_height;
+                    top_of_last_wall = projected_bottom_coord + projected_slice_height;*/
                 }
 
                 /*let mut dist_to_horz_intersection: f32 = std::f32::MAX;
