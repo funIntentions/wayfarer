@@ -9,6 +9,7 @@ use std::io::Cursor;
 use glium::{DisplayBuild, Surface};
 
 use glium::glutin;
+use std::cmp::Ordering; // needed for wall intersection struct
 
 const MAZE_SIZE : i32 = 5;
 const PLAYER_HEIGHT : i32 = 32;
@@ -16,6 +17,31 @@ const CELL_SIZE : i32 = 64;
 const PROJPLANE_HEIGHT : i32 = 200;
 const PROJPLANE_WIDTH : i32 = 320;
 const PLAYER_FOV : f32 = 1.0472; // 60 degrees in radians.
+
+#[derive(Clone, Copy, Eq)]
+struct WallIntersection {
+    distance: i32,
+    height: i32,
+    texture_offset: u32
+}
+
+impl Ord for WallIntersection {
+    fn cmp(&self, other: &WallIntersection) -> Ordering {
+        self.distance.cmp(&other.distance)
+    }
+}
+
+impl PartialOrd for WallIntersection {
+    fn partial_cmp(&self, other: &WallIntersection) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for WallIntersection {
+    fn eq(&self, other: &WallIntersection) -> bool {
+        self.distance == other.distance
+    }
+}
 
 // TODO: pack similar data into structs so it's easier to pass this stuff around...
 fn draw_floor_column(pixel_x : i32,
@@ -212,7 +238,6 @@ fn main() {
     let mut backward_buttom = false;
     let mut turn_left = false;
     let mut turn_right = false;
-    let mut ray_cast_cell_limit = 1;
 
     'main: loop {
         { // Raycast rendering
@@ -309,18 +334,15 @@ fn main() {
                 // TODO: do the raised/sunken checks with the heights in there and draw floors and walls as appropriate.
                 let mut horz_out_of_range = false;
                 let mut vert_out_of_range = false;
-                let mut ray_cast_cell_reached = 0;
-                while ray_cast_cell_limit > ray_cast_cell_reached && (!horz_out_of_range || !vert_out_of_range) {
-                    ray_cast_cell_reached += 1;
+                let mut wall_intersections: Vec<WallIntersection> = Vec::new();
+                while !horz_out_of_range || !vert_out_of_range {
                     let mut dist_to_horz_intersection: f32 = std::f32::MAX;
                     let mut hor_cell_height : f32 = 0.0;
 
                     let mut dist_to_vert_intersection: f32 = std::f32::MAX;
                     let mut vert_cell_height : f32 = 0.0;
 
-                    let mut horizontal_ray_intersection = false;
                     if ray_angle_degrees != 180 && ray_angle_degrees != 0 {
-                        // TODO: This nees to be in a while loop again...
                         loop {
                             // Will be used to index into the map array to check for walls.
                             let cell_y : i32 = (horz_wall_intersection_y / CELL_SIZE as f32) as i32;
@@ -332,15 +354,18 @@ fn main() {
                                 horz_out_of_range = true;
                                 break;
                             } else if maze[(cell_y * MAZE_SIZE + cell_x) as usize] > 0 {
-                                if maze[(cell_y * MAZE_SIZE + cell_x) as usize] > current_height {
-                                    hor_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
-                                    let y_dist = (horz_wall_intersection_y - player_y).powf(2.0);
-                                    let x_dist = (horz_wall_intersection_x - player_x).powf(2.0);
-                                    dist_to_horz_intersection = (x_dist + y_dist).sqrt();
+                                hor_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
+                                let y_dist = (horz_wall_intersection_y - player_y).powf(2.0);
+                                let x_dist = (horz_wall_intersection_x - player_x).powf(2.0);
+                                dist_to_horz_intersection = (x_dist + y_dist).sqrt();
 
-                                    horizontal_ray_intersection = true;
-                                }
-                                break;
+                                let wall_intersection = WallIntersection {
+                                    distance: dist_to_horz_intersection as i32,
+                                    height: hor_cell_height as i32,
+                                    texture_offset: horz_wall_intersection_x as u32 % CELL_SIZE as u32
+                                };
+
+                                wall_intersections.push(wall_intersection);
                             }
 
                             // Extend the ray further, checking what will be the next intersection.
@@ -353,7 +378,6 @@ fn main() {
                         horz_out_of_range = true;
                     }
 
-                    let mut vertical_ray_intersection = false;
                     if ray_angle_degrees != 90 && ray_angle_degrees != 270 {
                         loop {
                             let cell_y = (vert_wall_intersection_y / CELL_SIZE as f32) as i32;
@@ -365,16 +389,18 @@ fn main() {
                                 vert_out_of_range = true;
                                 break;
                             } else if maze[(cell_y * MAZE_SIZE + cell_x) as usize] > 0 {
-                                // Does the line of intersection belong to a cell that is a wall?
-                                if maze[(cell_y * MAZE_SIZE + cell_x) as usize] > current_height {
-                                    vert_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
-                                    let y_dist = (vert_wall_intersection_y - player_y).powf(2.0);
-                                    let x_dist = (vert_wall_intersection_x - player_x).powf(2.0);
-                                    dist_to_vert_intersection = (x_dist + y_dist).sqrt();
+                                vert_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
+                                let y_dist = (vert_wall_intersection_y - player_y).powf(2.0);
+                                let x_dist = (vert_wall_intersection_x - player_x).powf(2.0);
+                                dist_to_vert_intersection = (x_dist + y_dist).sqrt();
 
-                                    vertical_ray_intersection = true;
-                                }
-                                break;
+                                let wall_intersection = WallIntersection {
+                                    distance: dist_to_vert_intersection as i32,
+                                    height: vert_cell_height as i32,
+                                    texture_offset: vert_wall_intersection_y as u32 % CELL_SIZE as u32
+                                };
+
+                                wall_intersections.push(wall_intersection);
                             }
 
                             // Extend the ray further, checking what will be the next intersection.
@@ -386,236 +412,23 @@ fn main() {
                     {
                         vert_out_of_range = true;
                     }
+                }
 
-                    if !vertical_ray_intersection && !horizontal_ray_intersection {
-                        continue;
-                    }
+                // Sort all the wall intersections such that the closer walls will be drawn first.
+                wall_intersections.sort();
 
-                    let (closer_cell_height, mut closer_distance, closer_texture_offset) = if dist_to_horz_intersection < dist_to_vert_intersection {
-                        let horz_texture_offset = horz_wall_intersection_x as u32 % CELL_SIZE as u32;
-                        (hor_cell_height, dist_to_horz_intersection, horz_texture_offset)
-                    }
-                    else {
-                        let vert_texture_offset = vert_wall_intersection_y as u32 % CELL_SIZE as u32;
-                        (vert_cell_height, dist_to_vert_intersection, vert_texture_offset)
-                    };
-
-                    let (far_cell_height, mut far_distance, far_texture_offset) = if dist_to_horz_intersection > dist_to_vert_intersection {
-                        let horz_texture_offset = horz_wall_intersection_x as u32 % CELL_SIZE as u32;
-                        (hor_cell_height, dist_to_horz_intersection, horz_texture_offset)
-                    }
-                    else {
-                        let vert_texture_offset = vert_wall_intersection_y as u32 % CELL_SIZE as u32;
-                        (vert_cell_height, dist_to_vert_intersection, vert_texture_offset)
-                    };
-
-                    // Draw close
-                    current_height = closer_cell_height as i32;
-
-                    // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
-                    let beta = ray_angle - player_angle;
-                    closer_distance = closer_distance * beta.cos();
-
-                    top_of_last_wall = draw_wall_and_floor_columns(closer_cell_height, closer_distance, distance_to_projplane, column, top_of_last_wall, closer_texture_offset, image_width, image_height, &image_buffer, &mut dest_buffer);
-
-                    if vertical_ray_intersection && horizontal_ray_intersection
-                    {
-                        // Draw far
-                        current_height = far_cell_height as i32;
+                for intersection in &wall_intersections {
+                    if intersection.height > current_height {
+                        // Draw close
+                        current_height = intersection.height;
 
                         // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
-                        far_distance = far_distance * beta.cos();
+                        let beta = ray_angle - player_angle;
+                        let distance = intersection.distance as f32 * beta.cos();
 
-                        top_of_last_wall = draw_wall_and_floor_columns(far_cell_height, far_distance, distance_to_projplane, column, top_of_last_wall, far_texture_offset, image_width, image_height, &image_buffer, &mut dest_buffer);
-                    }
-
-                    /*let mut cell_height = vert_cell_height;
-                    let mut distance = dist_to_vert_intersection;
-                    let mut wall_texture_offset = vert_wall_intersection_y as u32 % CELL_SIZE as u32;
-                    let mut wall_intersection_x = vert_wall_intersection_x;
-                    let mut wall_intersection_y = vert_wall_intersection_y;
-
-                    if dist_to_horz_intersection < dist_to_vert_intersection {
-                        cell_height = hor_cell_height;
-                        distance = dist_to_horz_intersection;
-                        wall_texture_offset = horz_wall_intersection_x as u32 % CELL_SIZE as u32;
-                        wall_intersection_x = horz_wall_intersection_x;
-                        wall_intersection_y = horz_wall_intersection_y;
-                    }
-
-                    current_height = cell_height as i32;
-
-                    // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
-                    let beta = ray_angle - player_angle;
-                    distance = distance * beta.cos();
-
-                    top_of_last_wall = draw_wall_and_floor_columns(cell_height, distance, distance_to_projplane, column, top_of_last_wall, wall_texture_offset, image_width, image_height, &image_buffer, &mut dest_buffer);
-                    */
-
-                    /*let projected_slice_height = (cell_height / distance * distance_to_projplane) as i32;
-                    let projected_bottom_coord = PROJPLANE_HEIGHT/2 - (PLAYER_HEIGHT as f32 / (distance / distance_to_projplane)) as i32;
-                    //let projected_bottom_coord = PROJPLANE_HEIGHT/2 - projected_slice_height/2;
-
-                    // Floor Casting TODO: bring back once wall visiual glitches are sorted.
-                    //let (projplane_pixel_x, projplane_pixel_y) = (column, projected_bottom_coord);
-
-                    // TODO: have different textures, super confusing right now.
-                    // TODO: Readd the ceilling drawing.
-                    /*draw_floor_column(projplane_pixel_x,
-                                    projplane_pixel_y,
-                                    top_of_last_wall,
-                                    distance,
-                                    wall_intersection_x,
-                                    wall_intersection_y,
-                                    distance_to_projplane,
-                                    player_x,
-                                    player_y,
-                                    image_width,
-                                    &image_buffer,
-                                    &mut dest_buffer);*/
-
-                    let tex_x = (wall_texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
-
-                    let wall_bottom_coord = if projected_bottom_coord > top_of_last_wall { projected_bottom_coord } else { top_of_last_wall };
-
-                    draw_wall_column(wall_bottom_coord, projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
-
-                    top_of_last_wall = projected_bottom_coord + projected_slice_height;*/
-                }
-
-                /*let mut dist_to_horz_intersection: f32 = std::f32::MAX;
-                let mut hor_cell_height : f32 = 0.0;
-                // If the ray angle is angle is equal to 180 or 0, it will never intersect any horizontal wall.
-                if ray_angle_degrees != 180 && ray_angle_degrees != 0 {
-                    // Will be used to index into the map array to check for walls.
-                    let mut cell_y : i32 = (horz_wall_intersection_y / CELL_SIZE as f32) as i32;
-                    let mut cell_x : i32 = (horz_wall_intersection_x / CELL_SIZE as f32) as i32;
-
-                    let mut casting_ray = true;
-                    while casting_ray {
-                        // Check the horz_wall_intersections instead of the cell indexes for being < 0 since rounding (casting to i32) will sometimes round to 0 instead of a negative
-                        // This will then display a horz wall at the 0 index outside the map.
-                        if horz_wall_intersection_x < 0f32 || horz_wall_intersection_y < 0f32 || horz_wall_intersection_x >= (MAZE_SIZE * CELL_SIZE) as f32 || horz_wall_intersection_y >= (MAZE_SIZE * CELL_SIZE) as f32 {
-                            dist_to_horz_intersection = std::f32::MAX;
-                            casting_ray = false;
-                        } else if maze[(cell_y * MAZE_SIZE + cell_x) as usize] > 0 {
-                            hor_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
-                            let y_dist = (horz_wall_intersection_y - player_y).powf(2.0);
-                            let x_dist = (horz_wall_intersection_x - player_x).powf(2.0);
-                            dist_to_horz_intersection = (x_dist + y_dist).sqrt();
-                            casting_ray = false;
-                        } else {
-                            // Extend the ray further, checking what will be the next intersection.
-                            horz_wall_intersection_y += horz_wall_y_offset;
-                            horz_wall_intersection_x += horz_wall_x_offset;
-
-                            cell_y = (horz_wall_intersection_y / CELL_SIZE as f32) as i32;
-                            cell_x = (horz_wall_intersection_x / CELL_SIZE as f32) as i32;
-                        }
+                        top_of_last_wall = draw_wall_and_floor_columns(current_height as f32, distance, distance_to_projplane, column, top_of_last_wall, intersection.texture_offset, image_width, image_height, &image_buffer, &mut dest_buffer);
                     }
                 }
-
-                let mut dist_to_vert_intersection: f32 = std::f32::MAX;
-                let mut vert_cell_height : f32 = 0.0;
-
-                if ray_angle.to_degrees() != 90f32 && ray_angle.to_degrees() != 270f32 {
-                    // Will be used to index into the map array to check for walls.
-                    let mut cell_y = (vert_wall_intersection_y / CELL_SIZE as f32) as i32;
-                    let mut cell_x = (vert_wall_intersection_x / CELL_SIZE as f32) as i32;
-
-                    let mut casting_ray = true;
-                    while casting_ray {
-                        // Check the vert_wall_intersections instead of the cell indexes for being < 0 since rounding (casting to i32) will sometimes round to 0 instead of a negative
-                        // This will then display a vert wall at the 0 index outside the map.
-                        if vert_wall_intersection_x < 0f32 || vert_wall_intersection_y < 0f32 || cell_y >= MAZE_SIZE || cell_x >= MAZE_SIZE {
-                            dist_to_vert_intersection = std::f32::MAX;
-                            casting_ray = false;
-                        } else if maze[(cell_y * MAZE_SIZE + cell_x) as usize] > 0 {
-                            // Does the line of intersection belong to a cell that is a wall?
-                            vert_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
-                            let y_dist = (vert_wall_intersection_y - player_y).powf(2.0);
-                            let x_dist = (vert_wall_intersection_x - player_x).powf(2.0);
-                            dist_to_vert_intersection = (x_dist + y_dist).sqrt();
-                            casting_ray = false;
-                        } else {
-                            // Extend the ray further, checking what will be the next intersection.
-                            vert_wall_intersection_y += vert_wall_y_offset;
-                            vert_wall_intersection_x += vert_wall_x_offset;
-
-                            cell_y = (vert_wall_intersection_y / CELL_SIZE as f32) as i32;
-                            cell_x = (vert_wall_intersection_x / CELL_SIZE as f32) as i32;
-                        }
-                    }
-                }
-
-                let mut cell_height = vert_cell_height;
-                let mut distance = dist_to_vert_intersection;
-                let mut wall_texture_offset = vert_wall_intersection_y as u32 % CELL_SIZE as u32;
-                let mut wall_intersection_x = vert_wall_intersection_x;
-                let mut wall_intersection_y = vert_wall_intersection_y;
-
-                if dist_to_horz_intersection < dist_to_vert_intersection {
-                    cell_height = hor_cell_height;
-                    distance = dist_to_horz_intersection;
-                    wall_texture_offset = horz_wall_intersection_x as u32 % CELL_SIZE as u32;
-                    wall_intersection_x = horz_wall_intersection_x;
-                    wall_intersection_y = horz_wall_intersection_y;
-                }
-
-                // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
-                let beta = ray_angle - player_angle;
-                distance = distance * beta.cos();
-
-                let projected_slice_height = (cell_height / distance * distance_to_projplane) as i32;
-                let projected_bottom_coord = PROJPLANE_HEIGHT/2 - (PLAYER_HEIGHT as f32 / (distance / distance_to_projplane)) as i32;
-                //let projected_bottom_coord = PROJPLANE_HEIGHT/2 - projected_slice_height/2;
-
-                let tex_x = (wall_texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
-
-                draw_wall_column(projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);*/
-
-                // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
-                /*let beta = ray_angle - player_angle;
-                distance = distance * beta.cos();
-
-                let projected_slice_height = (cell_height / distance * distance_to_projplane) as i32;
-                let projected_bottom_coord = PROJPLANE_HEIGHT/2 - (PLAYER_HEIGHT as f32 / (distance / distance_to_projplane)) as i32;
-                //let projected_bottom_coord = PROJPLANE_HEIGHT/2 - projected_slice_height/2;
-
-                let tex_x = (wall_texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
-
-                // Draw wall column
-                for proj_y in projected_bottom_coord..projected_slice_height + projected_bottom_coord {
-                    // TODO: Look into this method of using ints to avoid floats.
-                    let d = proj_y * 256 - PROJPLANE_HEIGHT * 128 + projected_slice_height * 128;  //256 and 128 factors to avoid floats
-                    let tex_y = ((d * image_height as i32) / projected_slice_height) / 256;
-                    if proj_y >= 0 && proj_y < PROJPLANE_HEIGHT {
-                        dest_buffer[proj_y as usize][column as usize] = image_buffer[tex_y as usize % image_height as usize][tex_x as usize];
-                    }
-                }*/
-
-                // Only floor cast when a wall has been hit for now. 1000.0 is chosen at random pretty much.
-                /*if distance < 1000.0
-                {
-                    // Floor Casting
-                    let (projplane_pixel_x, projplane_pixel_y) = (column, projected_bottom_coord);
-
-                    // TODO: Readd the ceilling drawing.
-                    draw_floor_column(projplane_pixel_x,
-                                    projplane_pixel_y,
-                                    0,
-                                    distance,
-                                    wall_intersection_x,
-                                    wall_intersection_y,
-                                    distance_to_projplane,
-                                    player_x,
-                                    player_y,
-                                    image_width,
-                                    &image_buffer,
-                                    &mut dest_buffer);
-                } else {
-                    println!("Oh no: {}, {}, angle: {}", vert_wall_intersection_x, vert_wall_intersection_y, ray_angle.to_degrees());
-                }*/
 
                 ray_angle += degree_between_columns;
 
@@ -681,14 +494,6 @@ fn main() {
                                 },
                                 glium::glutin::VirtualKeyCode::D => {
                                     turn_right = false;
-                                },
-                                glium::glutin::VirtualKeyCode::E => {
-                                    ray_cast_cell_limit += 1;
-                                    println!("cell_limit: {}", ray_cast_cell_limit);
-                                },
-                                glium::glutin::VirtualKeyCode::Q => {
-                                    ray_cast_cell_limit -= 1;
-                                    println!("cell_limit: {}", ray_cast_cell_limit);
                                 },
                                 _ => ()
                             }
