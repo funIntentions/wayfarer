@@ -11,7 +11,7 @@ use glium::{DisplayBuild, Surface};
 use glium::glutin;
 use std::cmp::Ordering; // needed for wall intersection struct
 
-const MAZE_SIZE : i32 = 5;
+const MAZE_SIZE : i32 = 7;
 const PLAYER_HEIGHT : i32 = 32;
 const CELL_SIZE : i32 = 64;
 const PROJPLANE_HEIGHT : i32 = 200;
@@ -230,11 +230,13 @@ fn main() {
     let distance_to_projplane = (PROJPLANE_WIDTH as f32 / 2.0) / (PLAYER_FOV as f32 / 2.0).tan();
 
     // Contains the height of each floor tile.
-    let maze = [72, 52, 42, 32, 64,// 0 - 64
-                52, 0, 0, 0, 64, // 64 - 128
-                42, 0, 0, 32, 64, // 128 - 196
-                32, 0, 0, 0, 64, // 196 - 256
-                22, 12, 2, 64, 64];
+    let maze = [72, 72, 52, 42, 32, 64, 64,// 0 - 64
+                72, 52, 0, 0, 0, 0, 64, // 64 - 128
+                72, 42, 0, 0, 12, 0, 64, // 128 - 196
+                72, 32, 0, 0, 0, 0, 64, // 196 - 256
+                72, 22, 12, 2, 0, 64, 64,
+                72, 64, 64, 64, 64, 64, 64,
+                72, 72, 72, 72, 72, 72, 72];
 
 
     //let mut last_time = time::precise_time_s() as f32;
