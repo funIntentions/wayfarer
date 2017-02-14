@@ -89,7 +89,7 @@ fn draw_floor_column(pixel_x : i32,
     }
 }
 
-fn draw_wall_column(top_of_last_wall : i32,
+fn draw_wall_column(starting_y_coord : i32,
                     column_height : i32,
                     column_bottom : i32,
                     tex_x : usize,
@@ -98,7 +98,7 @@ fn draw_wall_column(top_of_last_wall : i32,
                     image_buffer : &Vec< Vec<(u8,u8,u8)> >,
                     dest_buffer : &mut Vec< Vec<(u8,u8,u8)> >) -> i32 {
 
-    let mut proj_y = top_of_last_wall;
+    let mut proj_y = starting_y_coord;
 
     if column_height > 0 {
         while proj_y < column_height + column_bottom {
@@ -425,29 +425,22 @@ fn main() {
                 for intersection in &wall_intersections {
                     if intersection.height > current_height {
                         // The height - the change in height will be the portion of the wall hidden (floor/top of the last wall will cover it)
-                        let height_change = intersection.height - current_height;
-                        let hidden_wall_slice = intersection.height - height_change;
+                        let last_height = current_height;
                         current_height = intersection.height;
-
-                        let hidden_ratio = hidden_wall_slice as f32 / intersection.height as f32;
 
                         // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
                         // TODO: This can be done once per column instead of per every wall
                         let beta = ray_angle - player_angle;
                         let distance = intersection.distance as f32 * beta.cos();
 
+                        let last_projected_slice_height = (last_height as f32 / distance * distance_to_projplane) as i32;
                         let projected_slice_height = (intersection.height as f32 / distance * distance_to_projplane) as i32;
                         let mut projected_bottom_coord = PROJPLANE_HEIGHT/2 - (PLAYER_HEIGHT as f32 / (distance / distance_to_projplane)) as i32;
 
-                        // Height at which the visible slice will start getting drawn.
-                        let visible_slice_height = (projected_slice_height as f32 * hidden_ratio) as i32;
-                        let mut visible_amount = (projected_slice_height as f32 * (1f32 - hidden_ratio)) as i32;
+                        // Start rendering from height of the last drawn wall.
+                        let starting_y_coord = projected_bottom_coord + last_projected_slice_height;
 
-                        // TODO: drawn slice height needs to be adjusted such that all the walls aren't thrust into the sky.
-                        projected_bottom_coord += visible_slice_height;
-
-                        // Floor Casting TODO: bring back once wall visiual glitches are sorted.
-                        let (projplane_pixel_x, projplane_pixel_y) = (column, projected_bottom_coord);
+                        let (projplane_pixel_x, projplane_pixel_y) = (column, starting_y_coord);
 
                         // TODO: have different textures, super confusing right now.
                         // TODO: Readd the ceilling drawing.
@@ -466,9 +459,10 @@ fn main() {
 
                         let tex_x = (intersection.texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
 
-                        let wall_bottom_coord = if projected_bottom_coord > top_of_last_wall { projected_bottom_coord } else { top_of_last_wall };
+                        // Calculate where the rendering of a wall should start.
+                        let wall_bottom_coord = if starting_y_coord > top_of_last_wall { starting_y_coord } else { top_of_last_wall };
 
-                        top_of_last_wall = draw_wall_column(wall_bottom_coord, visible_amount, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
+                        top_of_last_wall = draw_wall_column(wall_bottom_coord, projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
                     }
                 }
 
