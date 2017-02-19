@@ -52,6 +52,7 @@ fn draw_floor_column(pixel_x : i32,
                     wall_distance : f32,
                     wall_intersection_x : f32,
                     wall_intersection_y : f32,
+                    cell_height : f32,
                     distance_to_projplane : f32,
                     player_x : f32,
                     player_y : f32,
@@ -62,10 +63,12 @@ fn draw_floor_column(pixel_x : i32,
     let mut current_pixel_y = std::cmp::min(PROJPLANE_HEIGHT-1, pixel_y);
     let projection_plane_center_y = PROJPLANE_HEIGHT/2;
 
+    let floor_distance_from_eyes = PLAYER_HEIGHT as f32 - cell_height;
+
     while current_pixel_y >= bottom_y && current_pixel_y > 0
     {
         let distance_from_center_to_proj_pixel = projection_plane_center_y - current_pixel_y;
-        let staight_distance_from_player_to_floor_intersect = (PLAYER_HEIGHT as f32 / distance_from_center_to_proj_pixel as f32) * distance_to_projplane as f32;
+        let staight_distance_from_player_to_floor_intersect = (floor_distance_from_eyes / distance_from_center_to_proj_pixel as f32) * distance_to_projplane as f32;
         // Take the relative angle between the player_angle and the cast ray
         let distance_from_player_to_floor_intersect = staight_distance_from_player_to_floor_intersect; //* beta.cos(); TODO: get to work with proper distance.
 
@@ -411,6 +414,7 @@ fn main() {
                                     distance,
                                     intersection.wall_intersection_x as f32,
                                     intersection.wall_intersection_y as f32,
+                                    last_height as f32,
                                     distance_to_projplane,
                                     player_x,
                                     player_y,
