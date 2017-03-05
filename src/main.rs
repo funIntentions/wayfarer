@@ -18,18 +18,21 @@ const PROJPLANE_HEIGHT : i32 = 200;
 const PROJPLANE_WIDTH : i32 = 320;
 const PLAYER_FOV : f32 = 1.0472; // 60 degrees in radians.
 
-#[derive(Clone, Copy, Eq)]
+#[derive(Clone, Copy)]
 struct WallIntersection {
-    distance: i32,
-    height: i32,
+    distance_comp: i32,
+    distance: f32,
+    height: f32,
     texture_offset: u32,
-    wall_intersection_x: i32,
-    wall_intersection_y: i32
+    wall_intersection_x: f32,
+    wall_intersection_y: f32,
+    cell_x: i32,
+    cell_y: i32
 }
 
 impl Ord for WallIntersection {
     fn cmp(&self, other: &WallIntersection) -> Ordering {
-        self.distance.cmp(&other.distance)
+        self.distance_comp.cmp(&other.distance_comp)
     }
 }
 
@@ -41,9 +44,11 @@ impl PartialOrd for WallIntersection {
 
 impl PartialEq for WallIntersection {
     fn eq(&self, other: &WallIntersection) -> bool {
-        self.distance == other.distance
+        self.distance_comp == other.distance_comp
     }
 }
+
+impl Eq for WallIntersection {}
 
 // TODO: pack similar data into structs so it's easier to pass this stuff around...
 fn draw_floor_column(pixel_x : i32,
@@ -70,7 +75,7 @@ fn draw_floor_column(pixel_x : i32,
         let distance_from_center_to_proj_pixel = projection_plane_center_y - current_pixel_y;
         let staight_distance_from_player_to_floor_intersect = (floor_distance_from_eyes / distance_from_center_to_proj_pixel as f32) * distance_to_projplane as f32;
         // Take the relative angle between the player_angle and the cast ray
-        let distance_from_player_to_floor_intersect = staight_distance_from_player_to_floor_intersect; //* beta.cos(); TODO: get to work with proper distance.
+        let distance_from_player_to_floor_intersect = staight_distance_from_player_to_floor_intersect;// * beta.cos(); TODO: get to work with proper distance.
 
         let weight = distance_from_player_to_floor_intersect / wall_distance;
 
@@ -188,11 +193,11 @@ fn main() {
     let distance_to_projplane = (PROJPLANE_WIDTH as f32 / 2.0) / (PLAYER_FOV as f32 / 2.0).tan();
 
     // Contains the height of each floor tile.
-    let maze = [0, 0, 0, 0, 0,// 0 - 64
-                0, 0, 40, 0, 0, // 64 - 128
-                0, 0, 12, 24, 0, // 128 - 196
-                0, 0, 0, 0, 0, // 196 - 256
-                0, 0, 0, 0, 0];
+    let maze = [42, 42, 42, 42, 42,// 0 - 64
+                42, 0, 0, 0, 42, // 64 - 128
+                42, 0, 12, 0, 42, // 128 - 196
+                42, 0, 12, 0, 42, // 196 - 256
+                42, 42, 42, 42, 42];
 
 
     //let mut last_time = time::precise_time_s() as f32;
@@ -204,11 +209,12 @@ fn main() {
     let mut backward_buttom = false;
     let mut turn_left = false;
     let mut turn_right = false;
+    let mut cell_draw_limit = 1;
 
     'main: loop {
         { // Raycast rendering
-            let player_cell_x = (player_x / CELL_SIZE as f32) as i32;
-            let player_cell_y = (player_y / CELL_SIZE as f32) as i32;
+            let player_cell_x = player_x as i32/ CELL_SIZE;
+            let player_cell_y = player_y as i32/ CELL_SIZE;
 
             // Start with the left side of the players view. Without the + 0.00001 there will be visual artifacts with rays that intersect walls completely perpendicular.
             let mut ray_angle : f32 = player_angle - (PLAYER_FOV / 2.0) + 0.00001;
@@ -220,7 +226,7 @@ fn main() {
 
             for column in 0..PROJPLANE_WIDTH {
                 let ray_angle_degrees = ray_angle.to_degrees() as i32;
-                let mut current_height = maze[(player_cell_y * MAZE_SIZE + player_cell_x) as usize];
+                let mut current_height = maze[(player_cell_y * MAZE_SIZE + player_cell_x) as usize] as f32;
 
                 // Initially the top of the last wall projected will be the bottom of the projection plane.
                 let mut top_of_last_wall = 0i32;
@@ -240,6 +246,9 @@ fn main() {
                 horz_wall_x_offset = CELL_SIZE as f32 / ray_angle.tan();
                 vert_wall_y_offset = CELL_SIZE as f32 * ray_angle.tan();
 
+                let mut cell_x_offset = 0;
+                let mut cell_y_offset = 0;
+
                 // Facing up
                 // Reminder coordinate system has y growing downward and x growing to the left
                 if ray_angle >= (0f32).to_radians() && ray_angle < (180f32).to_radians() {
@@ -256,6 +265,7 @@ fn main() {
                     //  Point A will boarder the cell above
                     horz_wall_intersection_y = ((player_y as i32 / CELL_SIZE) * CELL_SIZE) as f32;
                     horz_wall_y_offset = -CELL_SIZE as f32;
+                    cell_y_offset = -1;
                 }
 
                 // TODO: Handle when the angle is zero/360 or 180 degrees (parallel to horizontal walls)
@@ -284,19 +294,20 @@ fn main() {
                     //  Point A will boarder the cell to the left
                     vert_wall_intersection_x = ((player_x as i32 / CELL_SIZE)  * CELL_SIZE) as f32; // TODO: try moving this -1 maybe it'll help fix the corner issue (def is having an effect).
                     vert_wall_x_offset = -CELL_SIZE as f32;
+                    cell_x_offset = -1;
                 }
 
                 let y_dist_to_intersection : f32 = (vert_wall_intersection_x - player_x) as f32 * ray_angle.tan();
                 vert_wall_intersection_y = y_dist_to_intersection + player_y as f32;
 
                 // TODO: remove the rounded ray_angle_degrees?
-                if !(ray_angle >= (0f32).to_radians() && ray_angle < (180f32).to_radians()) {
+                /*if !(ray_angle >= (0f32).to_radians() && ray_angle < (180f32).to_radians()) {
                     horz_wall_intersection_y -= 1f32;
                 }
 
                 if !(ray_angle < (90f32).to_radians() || ray_angle >= (270f32).to_radians()) {
                     vert_wall_intersection_x -= 1f32;
-                }
+                }*/
 
                 let mut horz_out_of_range = false;
                 let mut vert_out_of_range = false;
@@ -305,11 +316,11 @@ fn main() {
                     if ray_angle_degrees != 180 && ray_angle_degrees != 0 {
                         loop {
                             // Will be used to index into the map array to check for walls.
-                            let cell_y : i32 = (horz_wall_intersection_y / CELL_SIZE as f32) as i32;
-                            let cell_x : i32 = (horz_wall_intersection_x / CELL_SIZE as f32) as i32;
+                            let cell_y : i32 = horz_wall_intersection_y as i32 / CELL_SIZE + cell_y_offset;
+                            let cell_x : i32 = horz_wall_intersection_x as i32 / CELL_SIZE;
                             // Check the horz_wall_intersections instead of the cell indexes for being < 0 since rounding (casting to i32) will sometimes round to 0 instead of a negative
                             // This will then display a horz wall at the 0 index outside the map.
-                            if horz_wall_intersection_x < 0f32 || horz_wall_intersection_y < 0f32 || horz_wall_intersection_x >= (MAZE_SIZE * CELL_SIZE) as f32 || horz_wall_intersection_y >= (MAZE_SIZE * CELL_SIZE) as f32 {
+                            if cell_x < 0i32 || cell_y < 0i32 || cell_x >= MAZE_SIZE || cell_y >= MAZE_SIZE {
                                 horz_out_of_range = true;
                                 break;
                             } else {
@@ -319,11 +330,14 @@ fn main() {
                                 let dist_to_horz_intersection = (x_dist + y_dist).sqrt();
 
                                 let wall_intersection = WallIntersection {
-                                    distance: dist_to_horz_intersection as i32,
-                                    height: hor_cell_height as i32,
+                                    distance_comp: (dist_to_horz_intersection * 1000f32) as i32,
+                                    distance: dist_to_horz_intersection,
+                                    height: hor_cell_height,
                                     texture_offset: horz_wall_intersection_x as u32 % CELL_SIZE as u32,
-                                    wall_intersection_x: horz_wall_intersection_x as i32,
-                                    wall_intersection_y: horz_wall_intersection_y as i32
+                                    wall_intersection_x: horz_wall_intersection_x,
+                                    wall_intersection_y: horz_wall_intersection_y,
+                                    cell_x: cell_x,
+                                    cell_y: cell_y
                                 };
 
                                 wall_intersections.push(wall_intersection);
@@ -341,11 +355,11 @@ fn main() {
 
                     if ray_angle_degrees != 90 && ray_angle_degrees != 270 {
                         loop {
-                            let cell_y = (vert_wall_intersection_y / CELL_SIZE as f32) as i32;
-                            let cell_x = (vert_wall_intersection_x / CELL_SIZE as f32) as i32;
+                            let cell_y = vert_wall_intersection_y as i32 / CELL_SIZE;
+                            let cell_x = vert_wall_intersection_x as i32 / CELL_SIZE + cell_x_offset;
                             // Check the vert_wall_intersections instead of the cell indexes for being < 0 since rounding (casting to i32) will sometimes round to 0 instead of a negative
                             // This will then display a vert wall at the 0 index outside the map.
-                            if vert_wall_intersection_x < 0f32 || vert_wall_intersection_y < 0f32 || cell_y >= MAZE_SIZE || cell_x >= MAZE_SIZE {
+                            if cell_x < 0i32 || cell_y < 0i32 || cell_y >= MAZE_SIZE || cell_x >= MAZE_SIZE {
                                 vert_out_of_range = true;
                                 break;
                             } else {
@@ -355,11 +369,14 @@ fn main() {
                                 let dist_to_vert_intersection = (x_dist + y_dist).sqrt();
 
                                 let wall_intersection = WallIntersection {
-                                    distance: dist_to_vert_intersection as i32,
-                                    height: vert_cell_height as i32,
+                                    distance_comp: (dist_to_vert_intersection * 1000f32) as i32,
+                                    distance: dist_to_vert_intersection,
+                                    height: vert_cell_height,
                                     texture_offset: vert_wall_intersection_y as u32 % CELL_SIZE as u32,
-                                    wall_intersection_x: vert_wall_intersection_x as i32,
-                                    wall_intersection_y: vert_wall_intersection_y as i32
+                                    wall_intersection_x: vert_wall_intersection_x,
+                                    wall_intersection_y: vert_wall_intersection_y,
+                                    cell_x: cell_x,
+                                    cell_y: cell_y
                                 };
 
                                 wall_intersections.push(wall_intersection);
@@ -380,18 +397,37 @@ fn main() {
                 wall_intersections.sort();
 
                 // Draw walls and floors.
+                let mut draw_count = 0;
+                let mut last_dist = 0f32;
                 for intersection in &wall_intersections {
+                    if draw_count >= cell_draw_limit {
+                        break;
+                    }
+
                     // The height - the change in height will be the portion of the wall hidden (floor/top of the last wall will cover it)
                     let last_height = current_height;
+
+                    let diff = intersection.distance - last_dist;
+                    println!("{:?}", diff);
+
+                    // Continous slices can be drawn all at once.
+                    if last_height == intersection.height /*|| diff < 5f32*/ {
+                        continue;
+                    }
+
+                    last_dist = intersection.distance;
+
                     current_height = intersection.height;
+
+                    let sunken = last_height > current_height;
 
                     // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
                     // TODO: This can be done once per column instead of per every wall
                     let beta = ray_angle - player_angle;
-                    let distance = intersection.distance as f32 * beta.cos();
+                    let distance = intersection.distance * beta.cos();
 
                     let last_projected_slice_height = (last_height as f32 / distance * distance_to_projplane) as i32;
-                    let projected_slice_height = (intersection.height as f32 / distance * distance_to_projplane) as i32;
+                    let projected_slice_height = (current_height / distance * distance_to_projplane) as i32;
 
                     // TODO: write the formula in long form in comments here.
                     let divisor = distance / distance_to_projplane;
@@ -403,7 +439,6 @@ fn main() {
 
                     // Start rendering from height of the last drawn wall.
                     let starting_y_coord = projected_bottom_coord + last_projected_slice_height;
-
                     let (projplane_pixel_x, projplane_pixel_y) = (column, starting_y_coord);
 
                     // TODO: have different textures, super confusing right now.
@@ -412,8 +447,8 @@ fn main() {
                                     projplane_pixel_y,
                                     top_of_last_wall,
                                     distance,
-                                    intersection.wall_intersection_x as f32,
-                                    intersection.wall_intersection_y as f32,
+                                    intersection.wall_intersection_x,
+                                    intersection.wall_intersection_y,
                                     last_height as f32,
                                     distance_to_projplane,
                                     player_x,
@@ -422,12 +457,18 @@ fn main() {
                                     &image_buffer,
                                     &mut dest_buffer);
 
-                    let tex_x = (intersection.texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
+                    // No need to draw the wall when it is sunken (as it will not be visible).
+                    if sunken {
+                        top_of_last_wall = starting_y_coord;
+                    } else {
+                        let tex_x = (intersection.texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
 
-                    // Calculate where the rendering of a wall should start.
-                    let wall_bottom_coord = if starting_y_coord > top_of_last_wall { starting_y_coord } else { top_of_last_wall };
+                        // Calculate where the rendering of a wall should start.
+                        let wall_bottom_coord = if starting_y_coord > top_of_last_wall { starting_y_coord } else { top_of_last_wall };
+                        top_of_last_wall = draw_wall_column(wall_bottom_coord, projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
+                    }
 
-                    top_of_last_wall = draw_wall_column(wall_bottom_coord, projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
+                    draw_count += 1;
                 }
 
                 ray_angle += degree_between_columns;
@@ -494,6 +535,12 @@ fn main() {
                                 },
                                 glium::glutin::VirtualKeyCode::D => {
                                     turn_right = false;
+                                },
+                                glium::glutin::VirtualKeyCode::E => {
+                                    cell_draw_limit += 1;
+                                },
+                                glium::glutin::VirtualKeyCode::Q => {
+                                    cell_draw_limit -= 1;
                                 },
                                 _ => ()
                             }
