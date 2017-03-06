@@ -26,8 +26,6 @@ struct WallIntersection {
     texture_offset: u32,
     wall_intersection_x: f32,
     wall_intersection_y: f32,
-    cell_x: i32,
-    cell_y: i32
 }
 
 impl Ord for WallIntersection {
@@ -226,6 +224,10 @@ fn main() {
                 let ray_angle_degrees = ray_angle.to_degrees() as i32;
                 let mut current_height = maze[(player_cell_y * MAZE_SIZE + player_cell_x) as usize] as f32;
 
+                // The distance to a wall is multiplied by this to correct "fishbowl effect" before it's drawn.
+                // Angle is the angle of the cast ray, relative to the player's viewing angle.
+                let fishbowl_correction = (ray_angle - player_angle).cos();
+
                 // Initially the top of the last wall projected will be the bottom of the projection plane.
                 let mut top_of_last_wall = 0i32;
 
@@ -334,8 +336,6 @@ fn main() {
                                     texture_offset: horz_wall_intersection_x as u32 % CELL_SIZE as u32,
                                     wall_intersection_x: horz_wall_intersection_x,
                                     wall_intersection_y: horz_wall_intersection_y,
-                                    cell_x: cell_x,
-                                    cell_y: cell_y
                                 };
 
                                 wall_intersections.push(wall_intersection);
@@ -373,8 +373,6 @@ fn main() {
                                     texture_offset: vert_wall_intersection_y as u32 % CELL_SIZE as u32,
                                     wall_intersection_x: vert_wall_intersection_x,
                                     wall_intersection_y: vert_wall_intersection_y,
-                                    cell_x: cell_x,
-                                    cell_y: cell_y
                                 };
 
                                 wall_intersections.push(wall_intersection);
@@ -396,7 +394,6 @@ fn main() {
 
                 // Draw walls and floors.
                 let mut draw_count = 0;
-                let mut last_dist = 0f32;
                 for intersection in &wall_intersections {
                     if draw_count >= cell_draw_limit {
                         break;
@@ -405,14 +402,10 @@ fn main() {
                     // The height - the change in height will be the portion of the wall hidden (floor/top of the last wall will cover it)
                     let last_height = current_height;
 
-                    let diff = intersection.distance - last_dist;
-
                     // Continous slices can be drawn all at once.
-                    if last_height == intersection.height /*|| diff < 5f32*/ {
+                    if last_height == intersection.height {
                         continue;
                     }
-
-                    last_dist = intersection.distance;
 
                     current_height = intersection.height;
 
@@ -420,8 +413,8 @@ fn main() {
 
                     // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
                     // TODO: This can be done once per column instead of per every wall
-                    let beta = ray_angle - player_angle;
-                    let distance = intersection.distance * beta.cos();
+                    //let beta = ray_angle - player_angle;
+                    let distance = intersection.distance * fishbowl_correction;
 
                     let last_projected_slice_height = (last_height as f32 / distance * distance_to_projplane) as i32;
                     let projected_slice_height = (current_height / distance * distance_to_projplane) as i32;
