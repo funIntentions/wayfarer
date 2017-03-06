@@ -23,6 +23,7 @@ struct WallIntersection {
     distance_comp: i32,
     distance: f32,
     height: f32,
+    ceiling_height: f32,
     texture_offset: u32,
     wall_intersection_x: f32,
     wall_intersection_y: f32,
@@ -57,6 +58,7 @@ fn draw_floor_column(pixel_x : i32,
                     wall_intersection_y : f32,
                     cell_height : f32,
                     distance_to_projplane : f32,
+                    projection_plane_center_y : i32,
                     player_x : f32,
                     player_y : f32,
                     image_width : u32,
@@ -64,7 +66,6 @@ fn draw_floor_column(pixel_x : i32,
                     dest_buffer : &mut Vec< Vec<(u8,u8,u8)> >) {
     // Floor Casting
     let mut current_pixel_y = std::cmp::min(PROJPLANE_HEIGHT-1, pixel_y);
-    let projection_plane_center_y = PROJPLANE_HEIGHT/2;
 
     let floor_distance_from_eyes = PLAYER_HEIGHT as f32 - cell_height;
 
@@ -87,9 +88,55 @@ fn draw_floor_column(pixel_x : i32,
 
         dest_buffer[current_pixel_y as usize][pixel_x as usize] = image_buffer[tex_y as usize][tex_x as usize];
 
-        //     // Ceiling is the same, just mirrored.
-        //     let ceiling_y = PROJPLANE_HEIGHT as usize - projplane_pixel_y as usize - 1usize; // Subtract one because it's zero indexed.
-        //     dest_buffer[ceiling_y][projplane_pixel_x as usize] = image_buffer[tex_y as usize][tex_x as usize];
+        // Ceiling is the same, just mirrored.
+        //let ceiling_y = PROJPLANE_HEIGHT as usize - current_pixel_y as usize - 1usize; // Subtract one because it's zero indexed.
+        //dest_buffer[ceiling_y][pixel_x as usize] = image_buffer[tex_y as usize][tex_x as usize];
+
+        current_pixel_y -= 1;
+    }
+}
+
+fn draw_ceiling_column(pixel_x : i32,
+                        pixel_y : i32,
+                        top_y: i32,
+                        wall_distance : f32,
+                        wall_intersection_x : f32,
+                        wall_intersection_y : f32,
+                        cell_height : f32,
+                        distance_to_projplane : f32,
+                        projection_plane_center_y : i32,
+                        player_x : f32,
+                        player_y : f32,
+                        image_width : u32,
+                        image_buffer : &Vec< Vec<(u8,u8,u8)> >,
+                        dest_buffer : &mut Vec< Vec<(u8,u8,u8)> >) {
+    // Floor Casting
+    let mut current_pixel_y = std::cmp::min(PROJPLANE_HEIGHT-1, pixel_y);
+
+    let floor_distance_from_eyes = PLAYER_HEIGHT as f32 - cell_height;
+
+    while current_pixel_y >= top_y && current_pixel_y > 0
+    {
+        let distance_from_center_to_proj_pixel = projection_plane_center_y + current_pixel_y;
+        let staight_distance_from_player_to_floor_intersect = (floor_distance_from_eyes / distance_from_center_to_proj_pixel as f32) * distance_to_projplane as f32;
+        // Take the relative angle between the player_angle and the cast ray
+        let distance_from_player_to_floor_intersect = staight_distance_from_player_to_floor_intersect;// * beta.cos(); TODO: get to work with proper distance.
+
+        let weight = distance_from_player_to_floor_intersect / wall_distance;
+
+        let floor_intersection_x = weight * wall_intersection_x + (1.0f32 - weight) * player_x;
+        let floor_intersection_y = weight * wall_intersection_y + (1.0f32 - weight) * player_y;
+
+        let floor_texture_offset_x = floor_intersection_x as u32 % CELL_SIZE as u32;
+        let floor_texture_offset_y = floor_intersection_y as u32 % CELL_SIZE as u32;
+        let tex_x = (floor_texture_offset_x as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
+        let tex_y = (floor_texture_offset_y as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
+
+        dest_buffer[current_pixel_y as usize][pixel_x as usize] = image_buffer[tex_y as usize][tex_x as usize];
+
+        // Ceiling is the same, just mirrored.
+        let ceiling_y = PROJPLANE_HEIGHT as usize - current_pixel_y as usize - 1usize; // Subtract one because it's zero indexed.
+        dest_buffer[ceiling_y][pixel_x as usize] = image_buffer[tex_y as usize][tex_x as usize];
 
         current_pixel_y -= 1;
     }
@@ -192,8 +239,14 @@ fn main() {
     let maze = [42, 42, 42, 42, 42,// 0 - 64
                 42, 0, 0, 0, 42, // 64 - 128
                 42, 0, 12, 0, 42, // 128 - 196
-                42, 0, 22, 0, 42, // 196 - 256
+                42, 0, 0, 0, 42, // 196 - 256
                 42, 42, 42, 42, 42];
+
+    let maze_ceiling = [42, 42, 42, 42, 42,// 0 - 64
+                        42, 42, 42, 42, 42, // 64 - 128
+                        42, 42, 42, 42, 42, // 128 - 196
+                        42, 42, 42, 42, 42, // 196 - 256
+                        42, 42, 42, 42, 42];
 
 
     //let mut last_time = time::precise_time_s() as f32;
@@ -206,6 +259,8 @@ fn main() {
     let mut turn_left = false;
     let mut turn_right = false;
     let mut cell_draw_limit = 1;
+
+    let mut projection_plane_y_center = PROJPLANE_HEIGHT/2;
 
     'main: loop {
         { // Raycast rendering
@@ -325,6 +380,7 @@ fn main() {
                                 break;
                             } else {
                                 let hor_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
+                                let ceiling_height = maze_ceiling[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
                                 let y_dist = (horz_wall_intersection_y - player_y).powf(2.0);
                                 let x_dist = (horz_wall_intersection_x - player_x).powf(2.0);
                                 let dist_to_horz_intersection = (x_dist + y_dist).sqrt();
@@ -333,6 +389,7 @@ fn main() {
                                     distance_comp: (dist_to_horz_intersection * 1000f32) as i32,
                                     distance: dist_to_horz_intersection,
                                     height: hor_cell_height,
+                                    ceiling_height: ceiling_height,
                                     texture_offset: horz_wall_intersection_x as u32 % CELL_SIZE as u32,
                                     wall_intersection_x: horz_wall_intersection_x,
                                     wall_intersection_y: horz_wall_intersection_y,
@@ -362,6 +419,7 @@ fn main() {
                                 break;
                             } else {
                                 let vert_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
+                                let ceiling_height = maze_ceiling[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
                                 let y_dist = (vert_wall_intersection_y - player_y).powf(2.0);
                                 let x_dist = (vert_wall_intersection_x - player_x).powf(2.0);
                                 let dist_to_vert_intersection = (x_dist + y_dist).sqrt();
@@ -370,6 +428,7 @@ fn main() {
                                     distance_comp: (dist_to_vert_intersection * 1000f32) as i32,
                                     distance: dist_to_vert_intersection,
                                     height: vert_cell_height,
+                                    ceiling_height: ceiling_height,
                                     texture_offset: vert_wall_intersection_y as u32 % CELL_SIZE as u32,
                                     wall_intersection_x: vert_wall_intersection_x,
                                     wall_intersection_y: vert_wall_intersection_y,
@@ -422,7 +481,7 @@ fn main() {
                     // TODO: write the formula in long form in comments here.
                     let divisor = distance / distance_to_projplane;
                     let projected_bottom_coord = if divisor > std::f32::EPSILON {
-                        PROJPLANE_HEIGHT/2 - (PLAYER_HEIGHT as f32 / divisor) as i32
+                        projection_plane_y_center - (PLAYER_HEIGHT as f32 / divisor) as i32
                     } else {
                         0
                     };
@@ -442,6 +501,7 @@ fn main() {
                                     intersection.wall_intersection_y,
                                     last_height as f32,
                                     distance_to_projplane,
+                                    projection_plane_y_center,
                                     player_x,
                                     player_y,
                                     image_width,
@@ -532,6 +592,12 @@ fn main() {
                                 },
                                 glium::glutin::VirtualKeyCode::Q => {
                                     cell_draw_limit -= 1;
+                                },
+                                glium::glutin::VirtualKeyCode::R => {
+                                    projection_plane_y_center += 5;
+                                },
+                                glium::glutin::VirtualKeyCode::F => {
+                                    projection_plane_y_center -= 5;
                                 },
                                 _ => ()
                             }
