@@ -110,9 +110,7 @@ fn draw_wall_column(starting_y_coord : i32,
 
     if column_height > 0 {
         while proj_y < column_height + column_bottom {
-            // TODO: Look into this method of using ints to avoid floats.
-            let d = proj_y * 256 - PROJPLANE_HEIGHT * 128 + column_height * 128;  //256 and 128 factors to avoid floats
-            let tex_y = ((d * image_height as i32) / column_height) / 256;
+            let tex_y = ((proj_y - column_bottom) as f32 / (column_height as f32 / image_height as f32)) as u32;
             if proj_y >= 0 && proj_y < PROJPLANE_HEIGHT {
                 dest_buffer[proj_y as usize][column as usize] = image_buffer[tex_y as usize % image_height as usize][tex_x];
             }
@@ -196,7 +194,7 @@ fn main() {
     let maze = [42, 42, 42, 42, 42,// 0 - 64
                 42, 0, 0, 0, 42, // 64 - 128
                 42, 0, 12, 0, 42, // 128 - 196
-                42, 0, 12, 0, 42, // 196 - 256
+                42, 0, 22, 0, 42, // 196 - 256
                 42, 42, 42, 42, 42];
 
 
@@ -458,15 +456,15 @@ fn main() {
                                     &mut dest_buffer);
 
                     // No need to draw the wall when it is sunken (as it will not be visible).
-                    if sunken {
-                        top_of_last_wall = starting_y_coord;
-                    } else {
+                    //if sunken {
+                        //top_of_last_wall = starting_y_coord;
+                    //} else {
                         let tex_x = (intersection.texture_offset as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
 
                         // Calculate where the rendering of a wall should start.
                         let wall_bottom_coord = if starting_y_coord > top_of_last_wall { starting_y_coord } else { top_of_last_wall };
                         top_of_last_wall = draw_wall_column(wall_bottom_coord, projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
-                    }
+                    //}
 
                     draw_count += 1;
                 }
