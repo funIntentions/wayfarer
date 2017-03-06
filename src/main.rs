@@ -406,7 +406,6 @@ fn main() {
                     let last_height = current_height;
 
                     let diff = intersection.distance - last_dist;
-                    println!("{:?}", diff);
 
                     // Continous slices can be drawn all at once.
                     if last_height == intersection.height /*|| diff < 5f32*/ {
@@ -437,7 +436,8 @@ fn main() {
 
                     // Start rendering from height of the last drawn wall.
                     let starting_y_coord = projected_bottom_coord + last_projected_slice_height;
-                    let (projplane_pixel_x, projplane_pixel_y) = (column, starting_y_coord);
+                    // Subtract the starting_y_coord by 1 since that starting y is for the wall, while the floor will be drawn starting from one below it.
+                    let (projplane_pixel_x, projplane_pixel_y) = (column, starting_y_coord-1);
 
                     // TODO: have different textures, super confusing right now.
                     // TODO: Readd the ceilling drawing.
