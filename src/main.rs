@@ -11,12 +11,23 @@ use glium::{DisplayBuild, Surface};
 use glium::glutin;
 use std::cmp::Ordering; // needed for wall intersection struct
 
-const MAZE_SIZE : i32 = 5;
-const PLAYER_HEIGHT : i32 = 32;
-const CELL_SIZE : i32 = 64;
-const PROJPLANE_HEIGHT : i32 = 200;
-const PROJPLANE_WIDTH : i32 = 320;
-const PLAYER_FOV : f32 = 1.0472; // 60 degrees in radians.
+const MAZE_SIZE: i32 = 5;
+const PLAYER_HEIGHT: i32 = 32;
+const CELL_SIZE: i32 = 64;
+const PROJPLANE_HEIGHT: i32 = 200;
+const PROJPLANE_WIDTH: i32 = 320;
+const PLAYER_FOV: f32 = 1.0472; // 60 degrees in radians.
+
+const ANGLE_60: usize = PROJPLANE_WIDTH as usize;
+const ANGLE_30: usize = ANGLE_60 / 2;
+const ANGLE_15: usize = ANGLE_30 / 2;
+const ANGLE_90: usize = ANGLE_30 * 3;
+const ANGLE_180: usize = ANGLE_90 * 2;
+const ANGLE_270: usize = ANGLE_90 * 3;
+const ANGLE_360: usize = ANGLE_60 * 6;
+const ANGLE_0: usize = 0;
+const ANGLE_5: usize = ANGLE_30 / 6;
+const ANGLE_10: usize = ANGLE_5 * 2;
 
 #[derive(Clone, Copy)]
 struct WallIntersection {
@@ -49,6 +60,33 @@ impl PartialEq for WallIntersection {
 
 impl Eq for WallIntersection {}
 
+struct TrigTables {
+    sin_table: Vec<f32>,
+    i_sin_table: Vec<f32>,
+    cos_table: Vec<f32>,
+    i_cos_table: Vec<f32>,
+    tan_table: Vec<f32>,
+    i_tan_table: Vec<f32>,
+    fish_table: Vec<f32>,
+    x_step_table: Vec<f32>,
+    y_step_table: Vec<f32>,
+}
+
+fn create_tables() -> TrigTables {
+
+    TrigTables {
+        sin_table: Vec::with_capacity(ANGLE_360+1),
+        i_sin_table: Vec::with_capacity(ANGLE_360+1),
+        cos_table: Vec::with_capacity(ANGLE_360+1),
+        i_cos_table: Vec::with_capacity(ANGLE_360+1),
+        tan_table: Vec::with_capacity(ANGLE_360+1),
+        i_tan_table: Vec::with_capacity(ANGLE_360+1),
+        fish_table: Vec::with_capacity(ANGLE_360+1),
+        x_step_table: Vec::with_capacity(ANGLE_360+1),
+        y_step_table: Vec::with_capacity(ANGLE_360+1),
+    }
+}
+
 // TODO: pack similar data into structs so it's easier to pass this stuff around...
 fn draw_floor_column(pixel_x : i32,
                     pixel_y : i32,
@@ -74,6 +112,47 @@ fn draw_floor_column(pixel_x : i32,
         let distance_from_center_to_proj_pixel = projection_plane_center_y - current_pixel_y;
         let staight_distance_from_player_to_floor_intersect = (floor_distance_from_eyes / distance_from_center_to_proj_pixel as f32) * distance_to_projplane as f32;
         // Take the relative angle between the player_angle and the cast ray
+        let distance_from_player_to_floor_intersect = staight_distance_from_player_to_floor_intersect;// * beta; //TODO: get to work with proper distance.
+
+        let weight = distance_from_player_to_floor_intersect / wall_distance;
+
+        let floor_intersection_x = weight * wall_intersection_x + (1.0f32 - weight) * player_x;
+        let floor_intersection_y = weight * wall_intersection_y + (1.0f32 - weight) * player_y;
+
+        let floor_texture_offset_x = floor_intersection_x as u32 % CELL_SIZE as u32;
+        let floor_texture_offset_y = floor_intersection_y as u32 % CELL_SIZE as u32;
+        let tex_x = (floor_texture_offset_x as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
+        let tex_y = (floor_texture_offset_y as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
+
+        dest_buffer[current_pixel_y as usize][pixel_x as usize] = image_buffer[tex_y as usize][tex_x as usize];
+
+        current_pixel_y -= 1;
+    }
+}
+
+fn draw_ceiling_column(pixel_x : i32,
+                        pixel_y : i32,
+                        wall_distance : f32,
+                        wall_intersection_x : f32,
+                        wall_intersection_y : f32,
+                        cell_height : f32,
+                        distance_to_projplane : f32,
+                        projection_plane_center_y : i32,
+                        player_x : f32,
+                        player_y : f32,
+                        image_width : u32,
+                        image_buffer : &Vec< Vec<(u8,u8,u8)> >,
+                        dest_buffer : &mut Vec< Vec<(u8,u8,u8)> >) {
+    // Floor Casting
+    let mut current_pixel_y = std::cmp::max(0, pixel_y);
+
+    let floor_distance_from_eyes = cell_height - PLAYER_HEIGHT as f32;
+
+    while current_pixel_y < PROJPLANE_HEIGHT
+    {
+        let distance_from_center_to_proj_pixel = current_pixel_y - projection_plane_center_y;
+        let staight_distance_from_player_to_floor_intersect = (floor_distance_from_eyes / distance_from_center_to_proj_pixel as f32) * distance_to_projplane as f32;
+        // Take the relative angle between the player_angle and the cast ray
         let distance_from_player_to_floor_intersect = staight_distance_from_player_to_floor_intersect;// * beta.cos(); TODO: get to work with proper distance.
 
         let weight = distance_from_player_to_floor_intersect / wall_distance;
@@ -92,53 +171,7 @@ fn draw_floor_column(pixel_x : i32,
         //let ceiling_y = PROJPLANE_HEIGHT as usize - current_pixel_y as usize - 1usize; // Subtract one because it's zero indexed.
         //dest_buffer[ceiling_y][pixel_x as usize] = image_buffer[tex_y as usize][tex_x as usize];
 
-        current_pixel_y -= 1;
-    }
-}
-
-fn draw_ceiling_column(pixel_x : i32,
-                        pixel_y : i32,
-                        top_y: i32,
-                        wall_distance : f32,
-                        wall_intersection_x : f32,
-                        wall_intersection_y : f32,
-                        cell_height : f32,
-                        distance_to_projplane : f32,
-                        projection_plane_center_y : i32,
-                        player_x : f32,
-                        player_y : f32,
-                        image_width : u32,
-                        image_buffer : &Vec< Vec<(u8,u8,u8)> >,
-                        dest_buffer : &mut Vec< Vec<(u8,u8,u8)> >) {
-    // Floor Casting
-    let mut current_pixel_y = std::cmp::min(PROJPLANE_HEIGHT-1, pixel_y);
-
-    let floor_distance_from_eyes = PLAYER_HEIGHT as f32 - cell_height;
-
-    while current_pixel_y >= top_y && current_pixel_y > 0
-    {
-        let distance_from_center_to_proj_pixel = projection_plane_center_y + current_pixel_y;
-        let staight_distance_from_player_to_floor_intersect = (floor_distance_from_eyes / distance_from_center_to_proj_pixel as f32) * distance_to_projplane as f32;
-        // Take the relative angle between the player_angle and the cast ray
-        let distance_from_player_to_floor_intersect = staight_distance_from_player_to_floor_intersect;// * beta.cos(); TODO: get to work with proper distance.
-
-        let weight = distance_from_player_to_floor_intersect / wall_distance;
-
-        let floor_intersection_x = weight * wall_intersection_x + (1.0f32 - weight) * player_x;
-        let floor_intersection_y = weight * wall_intersection_y + (1.0f32 - weight) * player_y;
-
-        let floor_texture_offset_x = floor_intersection_x as u32 % CELL_SIZE as u32;
-        let floor_texture_offset_y = floor_intersection_y as u32 % CELL_SIZE as u32;
-        let tex_x = (floor_texture_offset_x as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
-        let tex_y = (floor_texture_offset_y as f32 * (image_width as f32 / CELL_SIZE as f32)) as usize;
-
-        dest_buffer[current_pixel_y as usize][pixel_x as usize] = image_buffer[tex_y as usize][tex_x as usize];
-
-        // Ceiling is the same, just mirrored.
-        let ceiling_y = PROJPLANE_HEIGHT as usize - current_pixel_y as usize - 1usize; // Subtract one because it's zero indexed.
-        dest_buffer[ceiling_y][pixel_x as usize] = image_buffer[tex_y as usize][tex_x as usize];
-
-        current_pixel_y -= 1;
+        current_pixel_y += 1;
     }
 }
 
@@ -355,15 +388,6 @@ fn main() {
                 let y_dist_to_intersection : f32 = (vert_wall_intersection_x - player_x) as f32 * ray_angle.tan();
                 vert_wall_intersection_y = y_dist_to_intersection + player_y as f32;
 
-                // TODO: remove the rounded ray_angle_degrees?
-                /*if !(ray_angle >= (0f32).to_radians() && ray_angle < (180f32).to_radians()) {
-                    horz_wall_intersection_y -= 1f32;
-                }
-
-                if !(ray_angle < (90f32).to_radians() || ray_angle >= (270f32).to_radians()) {
-                    vert_wall_intersection_x -= 1f32;
-                }*/
-
                 let mut horz_out_of_range = false;
                 let mut vert_out_of_range = false;
                 let mut wall_intersections: Vec<WallIntersection> = Vec::new();
@@ -492,14 +516,13 @@ fn main() {
                     let (projplane_pixel_x, projplane_pixel_y) = (column, starting_y_coord-1);
 
                     // TODO: have different textures, super confusing right now.
-                    // TODO: Readd the ceilling drawing.
                     draw_floor_column(projplane_pixel_x,
                                     projplane_pixel_y,
                                     top_of_last_wall,
                                     distance,
                                     intersection.wall_intersection_x,
                                     intersection.wall_intersection_y,
-                                    last_height as f32,
+                                    last_height,
                                     distance_to_projplane,
                                     projection_plane_y_center,
                                     player_x,
@@ -518,6 +541,20 @@ fn main() {
                         let wall_bottom_coord = if starting_y_coord > top_of_last_wall { starting_y_coord } else { top_of_last_wall };
                         top_of_last_wall = draw_wall_column(wall_bottom_coord, projected_slice_height, projected_bottom_coord, tex_x, image_height, column, &image_buffer, &mut dest_buffer);
                     //}
+
+                    /*draw_ceiling_column(projplane_pixel_x,
+                                        top_of_last_wall,
+                                        distance,
+                                        intersection.wall_intersection_x,
+                                        intersection.wall_intersection_y,
+                                        current_height,
+                                        distance_to_projplane,
+                                        projection_plane_y_center,
+                                        player_x,
+                                        player_y,
+                                        image_width,
+                                        &image_buffer,
+                                        &mut dest_buffer);*/
 
                     draw_count += 1;
                 }
