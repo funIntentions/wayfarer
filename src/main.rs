@@ -322,11 +322,11 @@ fn main() {
     let distance_to_projplane = 277f32;//(PROJPLANE_WIDTH as f32 / 2.0) / (PLAYER_FOV as f32 / 2.0).tan();
 
     // Contains the height of each floor tile.
-    let maze = [16f32, 16f32, 16f32, 16f32, 16f32,// 0 - 16f32
+    let maze = [62f32, 16f32, 16f32, 16f32, 62f32,// 0 - 16f32
                 16f32, 0f32, 0f32, 0f32, 16f32, // 32f32 - 128
-                16f32, 0f32, 64f32, 0f32, 16f32, // 128 - 196
+                16f32, 0f32, 22f32, 0f32, 16f32, // 128 - 196
                 16f32, 0f32, 0f32, 0f32, 16f32, // 196 - 256
-                16f32, 16f32, 16f32, 16f32, 16f32];
+                62f32, 16f32, 16f32, 16f32, 62f32];
 
     /*let maze_ceiling = [42, 42, 42, 42, 42,// 0 - 64
                         42, 42, 42, 42, 42, // 64 - 128
@@ -370,57 +370,61 @@ fn main() {
                 let mut top_of_last_wall = 0i32;
 
                 // horizontal wall intersection data for raycast.
-                let mut horz_wall_intersection_y : f32;
-                let horz_wall_y_offset : f32;
+                let mut horz_wall_intersection_y : i32;
+                let horz_wall_y_offset : i32;
                 let mut horz_wall_intersection_x : f32;
 
                 // vertical wall intersection data for raycast.
                 let mut vert_wall_intersection_y : f32;
-                let vert_wall_x_offset : f32;
-                let mut vert_wall_intersection_x : f32;
+                let vert_wall_x_offset : i32;
+                let mut vert_wall_intersection_x : i32;
 
 
-                let mut cell_x_offset = 0;
-                let mut cell_y_offset = 0;
+                //let mut cell_x_offset = 0;
+                //let mut cell_y_offset = 0;
 
                 // Facing up
                 // Reminder coordinate system has y growing downward and x growing to the left
                 if cast_arc > ANGLE_0 && cast_arc < ANGLE_180 {
                     // Point A will boarder the cell below
-                    horz_wall_intersection_y = ((player_y as i32 / CELL_SIZE) * CELL_SIZE) as f32 + CELL_SIZE as f32;
-                    horz_wall_y_offset = CELL_SIZE as f32;
+                    horz_wall_intersection_y = ((player_y as i32 / CELL_SIZE) * CELL_SIZE) + CELL_SIZE;
+                    horz_wall_y_offset = CELL_SIZE;
 
-                    let x_dist_to_intersection = (horz_wall_intersection_y - player_y) as f32 * trig_tables.i_tan_table[cast_arc as usize];
+                    let x_dist_to_intersection = (horz_wall_intersection_y as f32 - player_y) * trig_tables.i_tan_table[cast_arc as usize];
                     horz_wall_intersection_x = x_dist_to_intersection + player_x as f32;
                 } else {
                     //  Point A will boarder the cell above
-                    horz_wall_intersection_y = ((player_y as i32 / CELL_SIZE) * CELL_SIZE) as f32;
-                    horz_wall_y_offset = -CELL_SIZE as f32;
-                    cell_y_offset = -1;
+                    horz_wall_intersection_y = ((player_y as i32 / CELL_SIZE) * CELL_SIZE);
+                    horz_wall_y_offset = -CELL_SIZE;
+                    //cell_y_offset = -1;
 
-                    let x_dist_to_intersection = (horz_wall_intersection_y - player_y) as f32 * trig_tables.i_tan_table[cast_arc as usize];
+                    let x_dist_to_intersection = (horz_wall_intersection_y as f32 - player_y) as f32 * trig_tables.i_tan_table[cast_arc as usize];
                     horz_wall_intersection_x = x_dist_to_intersection + player_x as f32;
+
+                    horz_wall_intersection_y -= 1;
                 }
 
                 // Facing right
                 if cast_arc < ANGLE_90 || cast_arc > ANGLE_270
                 {
                     // Point A will boarder the cell to the right
-                    vert_wall_intersection_x = ((player_x as i32 / CELL_SIZE) * CELL_SIZE) as f32 + CELL_SIZE as f32;
-                    vert_wall_x_offset = CELL_SIZE as f32;
+                    vert_wall_intersection_x = ((player_x as i32 / CELL_SIZE) * CELL_SIZE) + CELL_SIZE;
+                    vert_wall_x_offset = CELL_SIZE;
 
-                    let y_dist_to_intersection : f32 = (vert_wall_intersection_x - player_x) as f32 * trig_tables.tan_table[cast_arc as usize];
+                    let y_dist_to_intersection : f32 = (vert_wall_intersection_x as f32 - player_x) * trig_tables.tan_table[cast_arc as usize];
                     vert_wall_intersection_y = y_dist_to_intersection + player_y as f32;
                 }
                 else
                 {
                     //  Point A will boarder the cell to the left
-                    vert_wall_intersection_x = ((player_x as i32 / CELL_SIZE)  * CELL_SIZE) as f32;
-                    vert_wall_x_offset = -CELL_SIZE as f32;
-                    cell_x_offset = -1;
+                    vert_wall_intersection_x = (player_x as i32 / CELL_SIZE)  * CELL_SIZE;
+                    vert_wall_x_offset = -CELL_SIZE;
+                    //cell_x_offset = -1;
 
-                    let y_dist_to_intersection : f32 = (vert_wall_intersection_x - player_x) as f32 * trig_tables.tan_table[cast_arc as usize];
+                    let y_dist_to_intersection : f32 = (vert_wall_intersection_x as f32 - player_x) * trig_tables.tan_table[cast_arc as usize];
                     vert_wall_intersection_y = y_dist_to_intersection + player_y as f32;
+
+                    vert_wall_intersection_x -= 1;
                 }
 
 
@@ -432,11 +436,11 @@ fn main() {
                         let horz_wall_x_offset = trig_tables.x_step_table[cast_arc as usize];
                         loop {
                             // Will be used to index into the map array to check for walls.
-                            let cell_y : i32 = horz_wall_intersection_y as i32 / CELL_SIZE + cell_y_offset;
+                            let cell_y : i32 = horz_wall_intersection_y as i32 / CELL_SIZE;/* + cell_y_offset;*/
                             let cell_x : i32 = horz_wall_intersection_x as i32 / CELL_SIZE;
                             // Check the horz_wall_intersections instead of the cell indexes for being < 0 since rounding (casting to i32) will sometimes round to 0 instead of a negative
                             // This will then display a horz wall at the 0 index outside the map.
-                            if cell_x < 0i32 || cell_y < 0i32 || cell_x >= MAZE_SIZE || cell_y >= MAZE_SIZE {
+                            if horz_wall_intersection_x < 0f32 || horz_wall_intersection_y < 0 || cell_x >= MAZE_SIZE || cell_y >= MAZE_SIZE {
                                 horz_out_of_range = true;
                                 break;
                             } else {
@@ -451,7 +455,7 @@ fn main() {
                                     //ceiling_height: ceiling_height,
                                     texture_offset: horz_wall_intersection_x as u32 % CELL_SIZE as u32,
                                     wall_intersection_x: horz_wall_intersection_x,
-                                    wall_intersection_y: horz_wall_intersection_y,
+                                    wall_intersection_y: horz_wall_intersection_y as f32,
                                 };
 
                                 wall_intersections.push(wall_intersection);
@@ -471,10 +475,10 @@ fn main() {
                         let vert_wall_y_offset = trig_tables.y_step_table[cast_arc as usize];
                         loop {
                             let cell_y = vert_wall_intersection_y as i32 / CELL_SIZE;
-                            let cell_x = vert_wall_intersection_x as i32 / CELL_SIZE + cell_x_offset;
+                            let cell_x = vert_wall_intersection_x as i32 / CELL_SIZE;/* + cell_x_offset;*/
                             // Check the vert_wall_intersections instead of the cell indexes for being < 0 since rounding (casting to i32) will sometimes round to 0 instead of a negative
                             // This will then display a vert wall at the 0 index outside the map.
-                            if cell_x < 0i32 || cell_y < 0i32 || cell_y >= MAZE_SIZE || cell_x >= MAZE_SIZE {
+                            if vert_wall_intersection_x < 0 || vert_wall_intersection_y < 0f32 || cell_y >= MAZE_SIZE || cell_x >= MAZE_SIZE {
                                 vert_out_of_range = true;
                                 break;
                             } else {
@@ -488,7 +492,7 @@ fn main() {
                                     height: vert_cell_height,
                                     //ceiling_height: ceiling_height,
                                     texture_offset: vert_wall_intersection_y as u32 % CELL_SIZE as u32,
-                                    wall_intersection_x: vert_wall_intersection_x,
+                                    wall_intersection_x: vert_wall_intersection_x as f32,
                                     wall_intersection_y: vert_wall_intersection_y,
                                 };
 
