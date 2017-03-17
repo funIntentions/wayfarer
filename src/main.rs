@@ -20,14 +20,11 @@ const PROJPLANE_WIDTH: i32 = 320;
 
 const ANGLE_60: i32 = PROJPLANE_WIDTH;
 const ANGLE_30: i32 = ANGLE_60 / 2;
-const ANGLE_15: i32 = ANGLE_30 / 2;
 const ANGLE_90: i32 = ANGLE_30 * 3;
 const ANGLE_180: i32 = ANGLE_90 * 2;
 const ANGLE_270: i32 = ANGLE_90 * 3;
 const ANGLE_360: i32 = ANGLE_60 * 6;
 const ANGLE_0: i32 = 0;
-const ANGLE_5: i32 = ANGLE_30 / 6;
-const ANGLE_10: i32 = ANGLE_5 * 2;
 
 const PLAYER_FOV: i32 = ANGLE_60;
 
@@ -92,6 +89,7 @@ fn create_tables() -> TrigTables {
     };
 
     for i in 0usize..ANGLE_360 as usize {
+        // Without the + 0.00001 there will be visual artifacts with rays that intersect walls completely perpendicular.
         let rad = arc_to_rad(i as f32) + 0.0001f32;
         tables.sin_table.push(rad.sin());
         tables.i_sin_table.push(1.0/tables.sin_table[i]);
@@ -315,24 +313,26 @@ fn main() {
     //let mut player_movement_forward = 0f32;
     //let player_turn_speed = (360f32).to_radians();
     let player_move_speed = 100f32;
-    let mut player_arc = ANGLE_0;
+    let mut player_angle = ANGLE_0 as f32;
+    let mut player_arc = player_angle as i32;
+
 
     let degree_between_columns = PLAYER_FOV / PROJPLANE_WIDTH;
 
     let distance_to_projplane = 277f32;//(PROJPLANE_WIDTH as f32 / 2.0) / (PLAYER_FOV as f32 / 2.0).tan();
 
     // Contains the height of each floor tile.
-    let maze = [42f32, 42f32, 42f32, 42f32, 42f32,// 0 - 64
-                42f32, 0f32, 0f32, 0f32, 42f32, // 64 - 128
-                42f32, 0f32, 12f32, 0f32, 42f32, // 128 - 196
-                42f32, 0f32, 0f32, 0f32, 42f32, // 196 - 256
-                42f32, 42f32, 42f32, 42f32, 42f32];
+    let maze = [16f32, 16f32, 16f32, 16f32, 16f32,// 0 - 16f32
+                16f32, 0f32, 0f32, 0f32, 16f32, // 32f32 - 128
+                16f32, 0f32, 64f32, 0f32, 16f32, // 128 - 196
+                16f32, 0f32, 0f32, 0f32, 16f32, // 196 - 256
+                16f32, 16f32, 16f32, 16f32, 16f32];
 
-    let maze_ceiling = [42, 42, 42, 42, 42,// 0 - 64
+    /*let maze_ceiling = [42, 42, 42, 42, 42,// 0 - 64
                         42, 42, 42, 42, 42, // 64 - 128
                         42, 42, 42, 42, 42, // 128 - 196
                         42, 42, 42, 42, 42, // 196 - 256
-                        42, 42, 42, 42, 42];
+                        42, 42, 42, 42, 42];*/
 
 
     //let mut last_time = time::precise_time_s() as f32;
@@ -353,11 +353,8 @@ fn main() {
             let player_cell_x = player_x as i32/ CELL_SIZE;
             let player_cell_y = player_y as i32/ CELL_SIZE;
 
-            //let player_angle = arc_to_rad(player_arc as f32);
-
-            // Start with the left side of the players view. Without the + 0.00001 there will be visual artifacts with rays that intersect walls completely perpendicular.
+            // Start with the left side of the players view.
             let mut cast_arc = player_arc - (PLAYER_FOV / 2);
-            //let mut ray_angle : f32 = player_angle - (PLAYER_FOV / 2.0) + 0.00001;
 
             // Wrap
             if cast_arc < 0 {
@@ -368,9 +365,6 @@ fn main() {
                 //let ray_angle_degrees = ray_anIgle.to_degrees() as i32;
                 let mut current_height = maze[(player_cell_y as i32 * MAZE_SIZE + player_cell_x as i32) as usize] as f32;
 
-                // The distance to a wall is multiplied by this to correct "fishbowl effect" before it's drawn.
-                // Angle is the angle of the cast ray, relative to the player's viewing angle.
-                //let fishbowl_correction = (ray_angle - player_angle).cos();
 
                 // Initially the top of the last wall projected will be the bottom of the projection plane.
                 let mut top_of_last_wall = 0i32;
@@ -407,10 +401,6 @@ fn main() {
                     let x_dist_to_intersection = (horz_wall_intersection_y - player_y) as f32 * trig_tables.i_tan_table[cast_arc as usize];
                     horz_wall_intersection_x = x_dist_to_intersection + player_x as f32;
                 }
-
-                // TODO: Handle when the angle is zero/360 or 180 degrees (parallel to horizontal walls)
-                //let mut x_dist_to_intersection : f32 = std::f32::MAX;
-
 
                 // Facing right
                 if cast_arc < ANGLE_90 || cast_arc > ANGLE_270
@@ -452,10 +442,6 @@ fn main() {
                             } else {
                                 let hor_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize];
                                 //let ceiling_height = maze_ceiling[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
-                                /*let y_dist = (horz_wall_intersection_y - player_y).powf(2.0);
-                                let x_dist = (horz_wall_intersection_x - player_x).powf(2.0);
-                                let dist_to_horz_intersection = (x_dist + y_dist).sqrt();*/
-
                                 let dist_to_horz_intersection = (horz_wall_intersection_x - player_x) * trig_tables.i_cos_table[cast_arc as usize];
 
                                 let wall_intersection = WallIntersection {
@@ -494,11 +480,8 @@ fn main() {
                             } else {
                                 let vert_cell_height = maze[(cell_y * MAZE_SIZE + cell_x) as usize];
                                 //let ceiling_height = maze_ceiling[(cell_y * MAZE_SIZE + cell_x) as usize] as f32;
-                                /*let y_dist = (vert_wall_intersection_y - player_y).powf(2.0);
-                                let x_dist = (vert_wall_intersection_x - player_x).powf(2.0);
-                                let dist_to_vert_intersection = (x_dist + y_dist).sqrt();*/
-
                                 let dist_to_vert_intersection = (vert_wall_intersection_y - player_y) * trig_tables.i_sin_table[cast_arc as usize];
+
                                 let wall_intersection = WallIntersection {
                                     distance_comp: (dist_to_vert_intersection * 1000f32) as i32,
                                     distance: dist_to_vert_intersection,
@@ -545,21 +528,22 @@ fn main() {
 
                     let sunken = last_height > current_height;
 
-                    // Correct "fishbowl effect". Beta angle is the angle of the cast ray, relative to the player's viewing angle.
-                    // TODO: This can be done once per column instead of per every wall
-                    //let beta = ray_angle - player_angle;
+                    // Correct "fishbowl effect". Fish table angle is the angle of the cast ray, relative to the player's viewing angle.
                     let distance = intersection.distance / trig_tables.fish_table[column as usize];
 
                     let last_projected_slice_height = (last_height as f32 / distance * distance_to_projplane) as i32;
                     let projected_slice_height = (current_height / distance * distance_to_projplane) as i32;
 
                     // TODO: write the formula in long form in comments here.
+                    // TODO: The further from 32 (Player's eye level), there appears to be some rounding woes that cause the wall to render awkwardly (jumpy?)
                     let divisor = distance / distance_to_projplane;
                     let projected_bottom_coord = if divisor > std::f32::EPSILON {
                         projection_plane_y_center - (PLAYER_HEIGHT as f32 / divisor) as i32
                     } else {
                         0
                     };
+
+                    //let projected_bottom_coord = projection_plane_y_center - (projected_slice_height as f32 * 0.5f32) as i32;
 
                     // Start rendering from height of the last drawn wall.
                     let starting_y_coord = projected_bottom_coord + last_projected_slice_height;
@@ -697,19 +681,20 @@ fn main() {
         }
 
         if turn_left {
-            player_arc -= ANGLE_10;
-            if player_arc < ANGLE_0 {
-                player_arc += ANGLE_360;
+            player_angle -= ANGLE_180 as f32 * delta_time;
+            if player_angle < ANGLE_0 as f32 {
+                player_angle += ANGLE_360 as f32;
             }
-            //player_angle -= player_turn_speed * delta_time;
         }
+
         if turn_right {
-            player_arc += ANGLE_10;
-            if player_arc >= ANGLE_360 {
-                player_arc -= ANGLE_360;
+            player_angle += ANGLE_180 as f32 * delta_time;
+            if player_angle >= ANGLE_360 as f32 {
+                player_angle -= ANGLE_360 as f32;
             }
-            //player_angle += player_turn_speed * delta_time;
         }
+
+        player_arc = player_angle as i32;
 
         let player_x_dir = trig_tables.cos_table[player_arc as usize];
         let player_y_dir = trig_tables.sin_table[player_arc as usize];
@@ -717,40 +702,13 @@ fn main() {
         if forward_button {
             player_x += player_move_speed * delta_time * player_x_dir;
             player_y += player_move_speed * delta_time * player_y_dir;
-            //player_movement_forward = player_move_speed;
         }
 
         if backward_buttom {
             player_x -= player_move_speed * delta_time * player_x_dir;
             player_y -= player_move_speed * delta_time * player_y_dir;
-            //player_movement_forward = -player_move_speed;
         }
 
-        /*if player_x < 0f32 {
-            player_x = 0f32;
-        }
-
-        if player_y < 0f32 {
-            player_y = 0f32;
-        }
-
-        if player_x >= MAZE_SIZE as f32 {
-            player_x = MAZE_SIZE as f32;
-        }
-
-        if player_y >= MAZE_SIZE as f32 {
-            player_y = MAZE_SIZE as f32;
-        }*/
-
-        //player_movement_forward = 0f32;
-
-        // Wrap
-        /*if player_angle < 0f32 {
-            player_angle = (360f32).to_radians() + player_angle;
-        } else if player_angle >= (360f32).to_radians() {
-            player_angle = player_angle - (360f32).to_radians();
-        }*/
-
-        std::thread::sleep(std::time::Duration::from_millis(16));
+        std::thread::sleep(std::time::Duration::from_millis(20));
     }
 }
